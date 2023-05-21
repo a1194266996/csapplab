@@ -200,7 +200,12 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-  return 2;
+  int tmin = 1 << 31;
+  int upperBound = ~(tmin | 0x39);
+  int lowerBound = ~0x30;
+  upperBound = tmin & (upperBound + x) >> 31;
+  lowerBound = tmin & (lowerBound + 1 + x) >> 31;
+  return !(upperBound|lowerBound);
 }
 /* 
  * conditional - same as x ? y : z 
@@ -210,7 +215,9 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  return 2;
+  x = !!x;
+  x = ~x + 1;
+  return (x & y) | (~x & z);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -220,7 +227,15 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  return 2;
+  int negX=~x+1;
+  int addX=negX+y;
+  int checkSign = addX>>31&1;
+  int leftBit = 1<<31;
+  int xLeft = x&leftBit;
+  int yLeft = y&leftBit;
+  int bitXor = xLeft ^ yLeft;
+  bitXor = (bitXor>>31)&1;
+  return ((!bitXor)&(!checkSign))|(bitXor&(xLeft>>31));
 }
 //4
 /* 
@@ -232,7 +247,7 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4 
  */
 int logicalNeg(int x) {
-  return 2;
+  return ((x | (~x + 1)) >> 31) + 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -247,7 +262,22 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-  return 0;
+  int b16,b8,b4,b2,b1,b0;
+  int sign = x >> 31;
+  x = (sign & ~x) | (~sign & x);
+
+  b16 = !!(x>>16)<<4;
+  x = x>>b16;
+  b8 = !!(x>>8)<<3;
+  x = x>>b8;
+  b4 = !!(x>>4)<<2;
+  x = x>>b4;
+  b2 = !!(x>>2)<<1;
+  x = x>>b2;
+  b1 = !!(x>>1);
+  x = x>>b1;
+  b0 = x;
+  return b16+b8+b4+b2+b1+b0+1;
 }
 //float
 /* 
@@ -262,7 +292,20 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+	  int sign = uf & 0x80000000; // 取出符号
+	  int e = uf & 0x7f800000; // 取出指数
+	  int m = uf & 0x007fffff; // 取出小数
+	  
+	  if (e == 0)
+	    return (uf << 1) | sign; // 非规格化的
+	  if (e == 0x7f800000)
+	    return uf; // INF || NAN
+	
+	  e += 0x00800000;
+	  if (e == 0x7f800000)
+	    return 0x7f800000 | sign; // 返回 INF
+	
+	  return sign | e | m; // 拼回去
 }
 /* 
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -277,7 +320,31 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  return 2;
+	  int sign = uf & 0x80000000; // 取出符号
+	  int e = uf & 0x7f800000; // 取出指数
+	  int m = (uf & 0x007fffff) | 0x00800000; // 取出小数并加上整数位的1
+	  
+	  if (e == 0)
+	    return 0; // 非规格化的
+	  if (e == 0x7f800000)
+	    return 0x80000000u; // INF || NAN
+	
+	  e = (e >> 23) - 127; // 取出真实指数
+	
+	  // 左移里一个比较特殊的情况是当左移的位数超过该数值类型的最大位数时,编译器会用左移的位数去模类型的最大位数,然后按余数进行移位
+	  // 故对于e > 31的情况必须要额外判断, 过大的左移位数并不会想当然的使e全部为0
+	  if (e > 31)
+	    return 0x80000000u;
+	  if (e < 0)
+	    return 0;
+	  
+	  // m 如果不做任何处理, 相当于一个1.m的值左移了23位
+	  if (e > 23)
+	    m <<= e - 23;
+	  else
+	    m >>= 23 - e;
+	
+	  return sign ? (~m + 1) : m;
 }
 /* 
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -293,5 +360,10 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-    return 2;
+    x += 127;
+    if(x <= 0)
+     return 0;
+    else if(x >= 255)
+      return 0x7f800000;
+    return x << 23;
 }
